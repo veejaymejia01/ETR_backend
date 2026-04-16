@@ -358,3 +358,20 @@ async function start() {
 }
 
 start();
+
+app.delete('/api/patients/:id', authRequired, async (req, res) => {
+  try {
+    const result = await pool.query(
+      'DELETE FROM patients WHERE id = $1 RETURNING *',
+      [req.params.id]
+    );
+
+    if (!result.rows.length) {
+      return res.status(404).json({ error: 'Patient not found' });
+    }
+
+    res.json({ message: 'Patient deleted successfully' });
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to delete patient' });
+  }
+});
