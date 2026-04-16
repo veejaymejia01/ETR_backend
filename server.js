@@ -361,17 +361,23 @@ start();
 
 app.delete('/api/patients/:id', authRequired, async (req, res) => {
   try {
+    const patientId = req.params.id;
+
+    await pool.query('DELETE FROM appointments WHERE patient_name IN (SELECT name FROM patients WHERE id=$1)', [patientId]);
+    await pool.query('DELETE FROM bills WHERE patient_id = $1', [patientId]);
+    await pool.query('DELETE FROM notifications WHERE patient_name IN (SELECT name FROM patients WHERE id=$1)', [patientId]);
+
     const result = await pool.query(
       'DELETE FROM patients WHERE id = $1 RETURNING *',
-      [req.params.id]
+      [patientId]
     );
 
     if (!result.rows.length) {
       return res.status(404).json({ error: 'Patient not found' });
     }
 
-    res.json({ message: 'Patient deleted successfully' });
+    res.json({ message: 'Patient and related data deleted' });
   } catch (error) {
-    res.status(500).json({ error: 'Failed to delete patient' });
+    res.status(500).json({ error: 'Delete failed' });
   }
 });
