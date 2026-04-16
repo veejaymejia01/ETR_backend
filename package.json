@@ -1,7 +1,7 @@
 {
   "name": "healthcare-portal-backend",
   "version": "1.0.0",
-  "description": "Ready-to-deploy Express backend for the Healthcare Portal frontend",
+  "description": "Healthcare Portal Backend with PostgreSQL",
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
