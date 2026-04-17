@@ -1,5 +1,8 @@
 require('dotenv').config();
 
+const { Resend } = require('resend');
+const resend = new Resend(process.env.re_aFWBtNi8_762Stpsde1sNdbaKUtExyGnZ);
+
 const express = require('express');
 const cors = require('cors');
 const jwt = require('jsonwebtoken');
@@ -381,3 +384,27 @@ app.delete('/api/patients/:id', authRequired, async (req, res) => {
     res.status(500).json({ error: 'Delete failed' });
   }
 });
+
+async function sendEmail(to, subject, message) {
+  if (!process.env.re_aFWBtNi8_762Stpsde1sNdbaKUtExyGnZ) {
+    throw new Error('RESEND_API_KEY is not set');
+  }
+
+  const { data, error } = await resend.emails.send({
+    from: 'Healthcare Portal <onboarding@resend.dev>',
+    to: [to],
+    subject,
+    html: `<div style="font-family: Arial, sans-serif;">
+      <h2>${subject}</h2>
+      <p>${message}</p>
+    </div>`
+  });
+
+  if (error) {
+    throw new Error(error.message || 'Email send failed');
+  }
+
+  return data;
+}
+
+
