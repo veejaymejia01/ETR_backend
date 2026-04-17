@@ -1,16 +1,15 @@
 require('dotenv').config();
 
-const { Resend } = require('resend');
-const resend = new Resend(process.env.re_aFWBtNi8_762Stpsde1sNdbaKUtExyGnZ);
-
 const express = require('express');
 const cors = require('cors');
 const jwt = require('jsonwebtoken');
+const { Resend } = require('resend');
 const pool = require('./db');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 const JWT_SECRET = process.env.JWT_SECRET || 'replace-this-in-production';
+const resend = new Resend(process.env.RESEND_API_KEY);
 
 app.use(cors());
 app.use(express.json());
@@ -52,20 +51,46 @@ function authRequired(req, res, next) {
   }
 }
 
-await pool.query(`
-  CREATE TABLE IF NOT EXISTS patients (
-    id TEXT PRIMARY KEY,
-    name TEXT NOT NULL,
-    email TEXT,
-    phone TEXT,
-    condition TEXT,
-    diagnosis TEXT
-  )
-`);
-await pool.query(`
-  ALTER TABLE patients
-  ADD COLUMN IF NOT EXISTS email TEXT
-`);
+async function sendEmail(to, subject, message) {
+  if (!process.env.RESEND_API_KEY) {
+    return null;
+  }
+
+  const { data, error } = await resend.emails.send({
+    from: 'Healthcare Portal <onboarding@resend.dev>',
+    to: [to],
+    subject,
+    html: `
+      <div style="font-family: Arial, sans-serif; line-height: 1.5;">
+        <h2>${subject}</h2>
+        <p>${message}</p>
+      </div>
+    `,
+  });
+
+  if (error) {
+    throw new Error(error.message || 'Email send failed');
+  }
+
+  return data;
+}
+
+async function initDb() {
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS patients (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      email TEXT,
+      phone TEXT,
+      condition TEXT,
+      diagnosis TEXT
+    )
+  `);
+
+  await pool.query(`
+    ALTER TABLE patients
+    ADD COLUMN IF NOT EXISTS email TEXT
+  `);
 
   await pool.query(`
     CREATE TABLE IF NOT EXISTS appointments (
@@ -194,6 +219,32 @@ app.patch('/api/patients/:id', authRequired, async (req, res) => {
   }
 });
 
+app.delete('/api/patients/:id', authRequired, async (req, res) => {
+  try {
+    const patientId = req.params.id;
+
+    const patientResult = await pool.query(
+      'SELECT * FROM patients WHERE id = $1',
+      [patientId]
+    );
+
+    if (!patientResult.rows.length) {
+      return res.status(404).json({ error: 'Patient not found' });
+    }
+
+    const patient = patientResult.rows[0];
+
+    await pool.query('DELETE FROM appointments WHERE patient_name = $1', [patient.name]);
+    await pool.query('DELETE FROM bills WHERE patient_id = $1', [patientId]);
+    await pool.query('DELETE FROM notifications WHERE patient_name = $1', [patient.name]);
+    await pool.query('DELETE FROM patients WHERE id = $1', [patientId]);
+
+    res.json({ message: 'Patient and related data deleted successfully' });
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to delete patient' });
+  }
+});
+
 app.get('/api/records/:patientId', authRequired, async (req, res) => {
   try {
     const result = await pool.query(
@@ -211,6 +262,7 @@ app.get('/api/records/:patientId', authRequired, async (req, res) => {
       diagnosis: patient.diagnosis,
       condition: patient.condition,
       phone: patient.phone,
+      email: patient.email,
     });
   } catch (error) {
     res.status(500).json({ error: 'Failed to fetch record' });
@@ -257,16 +309,20 @@ app.post('/api/appointments', authRequired, async (req, res) => {
     );
 
     const patientResult = await pool.query(
-      `SELECT email, name FROM patients WHERE LOWER(name) = LOWER($1) LIMIT 1`,
+      'SELECT email, name FROM patients WHERE LOWER(name) = LOWER($1) LIMIT 1',
       [patientName]
     );
 
     if (patientResult.rows.length && patientResult.rows[0].email) {
-      await sendEmail(
-        patientResult.rows[0].email,
-        'Appointment Confirmed',
-        `Hello ${patientResult.rows[0].name}, your appointment is scheduled for ${appointmentDate}.`
-      );
+      try {
+        await sendEmail(
+          patientResult.rows[0].email,
+          'Appointment Confirmed',
+          `Hello ${patientResult.rows[0].name}, your appointment is scheduled for ${appointmentDate}.`
+        );
+      } catch (emailError) {
+        console.error('Appointment email error:', emailError.message);
+      }
     }
 
     res.status(201).json(result.rows[0]);
@@ -329,16 +385,20 @@ app.post('/api/billing/invoices', authRequired, async (req, res) => {
     );
 
     const patientResult = await pool.query(
-      `SELECT email, name FROM patients WHERE id = $1 LIMIT 1`,
+      'SELECT email, name FROM patients WHERE id = $1 LIMIT 1',
       [patientId]
     );
 
     if (patientResult.rows.length && patientResult.rows[0].email) {
-      await sendEmail(
-        patientResult.rows[0].email,
-        'New Billing Notice',
-        `Hello ${patientResult.rows[0].name}, a new bill (${invoice}) for amount ${amount} has been added to your account.`
-      );
+      try {
+        await sendEmail(
+          patientResult.rows[0].email,
+          'New Billing Notice',
+          `Hello ${patientResult.rows[0].name}, a new bill (${invoice}) for amount ${amount} has been added to your account.`
+        );
+      } catch (emailError) {
+        console.error('Billing email error:', emailError.message);
+      }
     }
 
     res.status(201).json(result.rows[0]);
@@ -379,6 +439,7 @@ app.post('/api/notifications/send', authRequired, async (req, res) => {
     res.status(500).json({ error: 'Failed to create notification' });
   }
 });
+
 app.post('/api/email/send', authRequired, async (req, res) => {
   try {
     const { patientId, subject, message } = req.body || {};
@@ -388,7 +449,7 @@ app.post('/api/email/send', authRequired, async (req, res) => {
     }
 
     const patientResult = await pool.query(
-      `SELECT email, name FROM patients WHERE id = $1 LIMIT 1`,
+      'SELECT email, name FROM patients WHERE id = $1 LIMIT 1',
       [patientId]
     );
 
@@ -421,50 +482,3 @@ async function start() {
 }
 
 start();
-
-app.delete('/api/patients/:id', authRequired, async (req, res) => {
-  try {
-    const patientId = req.params.id;
-
-    await pool.query('DELETE FROM appointments WHERE patient_name IN (SELECT name FROM patients WHERE id=$1)', [patientId]);
-    await pool.query('DELETE FROM bills WHERE patient_id = $1', [patientId]);
-    await pool.query('DELETE FROM notifications WHERE patient_name IN (SELECT name FROM patients WHERE id=$1)', [patientId]);
-
-    const result = await pool.query(
-      'DELETE FROM patients WHERE id = $1 RETURNING *',
-      [patientId]
-    );
-
-    if (!result.rows.length) {
-      return res.status(404).json({ error: 'Patient not found' });
-    }
-
-    res.json({ message: 'Patient and related data deleted' });
-  } catch (error) {
-    res.status(500).json({ error: 'Delete failed' });
-  }
-});
-
-async function sendEmail(to, subject, message) {
-  if (!process.env.re_aFWBtNi8_762Stpsde1sNdbaKUtExyGnZ) {
-    throw new Error('RESEND_API_KEY is not set');
-  }
-
-  const { data, error } = await resend.emails.send({
-    from: 'Healthcare Portal <onboarding@resend.dev>',
-    to: [to],
-    subject,
-    html: `<div style="font-family: Arial, sans-serif;">
-      <h2>${subject}</h2>
-      <p>${message}</p>
-    </div>`
-  });
-
-  if (error) {
-    throw new Error(error.message || 'Email send failed');
-  }
-
-  return data;
-}
-
-
