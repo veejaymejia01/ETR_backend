@@ -52,16 +52,20 @@ function authRequired(req, res, next) {
   }
 }
 
-async function initDb() {
-  await pool.query(`
-    CREATE TABLE IF NOT EXISTS patients (
-      id TEXT PRIMARY KEY,
-      name TEXT NOT NULL,
-      phone TEXT,
-      condition TEXT,
-      diagnosis TEXT
-    )
-  `);
+await pool.query(`
+  CREATE TABLE IF NOT EXISTS patients (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    email TEXT,
+    phone TEXT,
+    condition TEXT,
+    diagnosis TEXT
+  )
+`);
+await pool.query(`
+  ALTER TABLE patients
+  ADD COLUMN IF NOT EXISTS email TEXT
+`);
 
   await pool.query(`
     CREATE TABLE IF NOT EXISTS appointments (
@@ -133,7 +137,7 @@ app.get('/api/patients', authRequired, async (_req, res) => {
 
 app.post('/api/patients', authRequired, async (req, res) => {
   try {
-    const { name, phone, condition, diagnosis } = req.body || {};
+    const { name, email, phone, condition, diagnosis } = req.body || {};
 
     if (!name) {
       return res.status(400).json({ error: 'name is required' });
@@ -142,13 +146,14 @@ app.post('/api/patients', authRequired, async (req, res) => {
     const id = genId('P');
     const result = await pool.query(
       `
-      INSERT INTO patients (id, name, phone, condition, diagnosis)
-      VALUES ($1, $2, $3, $4, $5)
+      INSERT INTO patients (id, name, email, phone, condition, diagnosis)
+      VALUES ($1, $2, $3, $4, $5, $6)
       RETURNING *
       `,
       [
         id,
         name,
+        email || null,
         phone || 'N/A',
         condition || 'General',
         diagnosis || 'Pending assessment',
@@ -163,19 +168,20 @@ app.post('/api/patients', authRequired, async (req, res) => {
 
 app.patch('/api/patients/:id', authRequired, async (req, res) => {
   try {
-    const { name, phone, condition, diagnosis } = req.body || {};
+    const { name, email, phone, condition, diagnosis } = req.body || {};
 
     const result = await pool.query(
       `
       UPDATE patients
       SET name = $1,
-          phone = $2,
-          condition = $3,
-          diagnosis = $4
-      WHERE id = $5
+          email = $2,
+          phone = $3,
+          condition = $4,
+          diagnosis = $5
+      WHERE id = $6
       RETURNING *
       `,
-      [name, phone, condition, diagnosis, req.params.id]
+      [name, email, phone, condition, diagnosis, req.params.id]
     );
 
     if (!result.rows.length) {
@@ -250,6 +256,19 @@ app.post('/api/appointments', authRequired, async (req, res) => {
       [id, patientName, appointmentDate, status || 'Scheduled']
     );
 
+    const patientResult = await pool.query(
+      `SELECT email, name FROM patients WHERE LOWER(name) = LOWER($1) LIMIT 1`,
+      [patientName]
+    );
+
+    if (patientResult.rows.length && patientResult.rows[0].email) {
+      await sendEmail(
+        patientResult.rows[0].email,
+        'Appointment Confirmed',
+        `Hello ${patientResult.rows[0].name}, your appointment is scheduled for ${appointmentDate}.`
+      );
+    }
+
     res.status(201).json(result.rows[0]);
   } catch (error) {
     res.status(500).json({ error: 'Failed to create appointment' });
@@ -309,6 +328,19 @@ app.post('/api/billing/invoices', authRequired, async (req, res) => {
       [id, patientId, patientName || 'Unknown Patient', invoice, amount]
     );
 
+    const patientResult = await pool.query(
+      `SELECT email, name FROM patients WHERE id = $1 LIMIT 1`,
+      [patientId]
+    );
+
+    if (patientResult.rows.length && patientResult.rows[0].email) {
+      await sendEmail(
+        patientResult.rows[0].email,
+        'New Billing Notice',
+        `Hello ${patientResult.rows[0].name}, a new bill (${invoice}) for amount ${amount} has been added to your account.`
+      );
+    }
+
     res.status(201).json(result.rows[0]);
   } catch (error) {
     res.status(500).json({ error: 'Failed to create invoice' });
@@ -345,6 +377,34 @@ app.post('/api/notifications/send', authRequired, async (req, res) => {
     res.status(201).json(result.rows[0]);
   } catch (error) {
     res.status(500).json({ error: 'Failed to create notification' });
+  }
+});
+app.post('/api/email/send', authRequired, async (req, res) => {
+  try {
+    const { patientId, subject, message } = req.body || {};
+
+    if (!patientId || !message) {
+      return res.status(400).json({ error: 'patientId and message are required' });
+    }
+
+    const patientResult = await pool.query(
+      `SELECT email, name FROM patients WHERE id = $1 LIMIT 1`,
+      [patientId]
+    );
+
+    if (!patientResult.rows.length || !patientResult.rows[0].email) {
+      return res.status(404).json({ error: 'Patient email not found' });
+    }
+
+    await sendEmail(
+      patientResult.rows[0].email,
+      subject || 'Healthcare Notification',
+      message
+    );
+
+    res.status(201).json({ message: 'Email sent successfully' });
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to send email' });
   }
 });
 
