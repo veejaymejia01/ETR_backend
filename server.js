@@ -418,39 +418,98 @@ app.get("/api/patient/appointments", authRequired, async (req, res) => {
     res.status(500).json({ error: "Failed to fetch patient appointments" });
   }
 });
-app.post("/api/patient/appointments", authRequired, async (req, res) => {
+app.post('/api/appointments', authRequired, async (req, res) => {
   try {
-    if (req.user.role !== "patient")
-      return res.status(403).json({ error: "Forbidden" });
-    const { appointmentDate } = req.body || {};
-    if (!appointmentDate)
-      return res.status(400).json({ error: "appointmentDate is required" });
-    const p = await pool.query(
-      "SELECT * FROM patients WHERE user_id=$1 LIMIT 1",
-      [req.user.sub],
+    const { patientName, appointmentDate, status } = req.body || {};
+
+    if (!patientName || !appointmentDate) {
+      return res.status(400).json({ error: 'patientName and appointmentDate are required' });
+    }
+
+    const patientResult = await pool.query(
+      'SELECT * FROM patients WHERE LOWER(name) = LOWER($1) LIMIT 1',
+      [patientName]
     );
-    if (!p.rows.length)
-      return res.status(404).json({ error: "Patient profile not found" });
-    const patient = p.rows[0];
-    const id = genId("A");
-    const r = await pool.query(
-      'INSERT INTO appointments (id,patient_id,patient_name,appointment_date,status) VALUES ($1,$2,$3,$4,$5) RETURNING id,patient_id AS "patientId",patient_name AS "patientName",appointment_date AS "appointmentDate",status',
-      [id, patient.id, patient.name, appointmentDate, "Scheduled"],
+
+    const patient = patientResult.rows[0] || null;
+    const id = `A${Date.now()}`;
+
+    const result = await pool.query(
+      `
+      INSERT INTO appointments (id, patient_id, patient_name, appointment_date, status)
+      VALUES ($1, $2, $3, $4, $5)
+      RETURNING id, patient_id AS "patientId", patient_name AS "patientName", appointment_date AS "appointmentDate", status
+      `,
+      [id, patient?.id || null, patientName, appointmentDate, status || 'Scheduled']
     );
-    if (patient.email) {
+
+    if (patient?.email) {
       try {
-        await sendEmail(
-          patient.email,
-          "Appointment Confirmed",
-          `Hello ${patient.name}, your appointment is scheduled for ${appointmentDate}.`,
-        );
-      } catch (e) {
-        console.error("Patient email error:", e.message);
+        await sendAppointmentEmail({
+          to: patient.email,
+          patientName: patient.name,
+          appointmentDate,
+        });
+      } catch (emailError) {
+        console.error('Appointment email error:', emailError.message);
       }
     }
-    res.status(201).json(r.rows[0]);
-  } catch {
-    res.status(500).json({ error: "Failed to create patient appointment" });
+
+    res.status(201).json(result.rows[0]);
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: 'Failed to create appointment' });
+  }
+});
+app.post('/api/patient/appointments', authRequired, async (req, res) => {
+  try {
+    if (req.user.role !== 'patient') {
+      return res.status(403).json({ error: 'Forbidden' });
+    }
+
+    const { appointmentDate } = req.body || {};
+
+    if (!appointmentDate) {
+      return res.status(400).json({ error: 'appointmentDate is required' });
+    }
+
+    const patientResult = await pool.query(
+      'SELECT * FROM patients WHERE user_id = $1 LIMIT 1',
+      [req.user.sub]
+    );
+
+    if (!patientResult.rows.length) {
+      return res.status(404).json({ error: 'Patient profile not found' });
+    }
+
+    const patient = patientResult.rows[0];
+    const id = `A${Date.now()}`;
+
+    const result = await pool.query(
+      `
+      INSERT INTO appointments (id, patient_id, patient_name, appointment_date, status)
+      VALUES ($1, $2, $3, $4, $5)
+      RETURNING id, patient_id AS "patientId", patient_name AS "patientName", appointment_date AS "appointmentDate", status
+      `,
+      [id, patient.id, patient.name, appointmentDate, 'Scheduled']
+    );
+
+    if (patient.email) {
+      try {
+        await sendAppointmentEmail({
+          to: patient.email,
+          patientName: patient.name,
+          appointmentDate,
+        });
+      } catch (emailError) {
+        console.error('Patient appointment email error:', emailError.message);
+      }
+    }
+
+    res.status(201).json(result.rows[0]);
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: 'Failed to create patient appointment' });
   }
 });
 async function start() {
@@ -465,3 +524,30 @@ async function start() {
   }
 }
 start();
+async function sendAppointmentEmail({ to, patientName, appointmentDate }) {
+  if (!process.env.RESEND_API_KEY) {
+    console.warn('RESEND_API_KEY is missing');
+    return;
+  }
+
+  const { data, error } = await resend.emails.send({
+    from: 'Healthcare Portal <onboarding@resend.dev>',
+    to: [to],
+    subject: 'Appointment Confirmed',
+    html: `
+      <div style="font-family: Arial, sans-serif; line-height: 1.6;">
+        <h2>Appointment Confirmed</h2>
+        <p>Hello ${patientName},</p>
+        <p>Your appointment has been scheduled successfully.</p>
+        <p><strong>Date and time:</strong> ${appointmentDate}</p>
+        <p>Thank you.</p>
+      </div>
+    `,
+  });
+
+  if (error) {
+    throw new Error(error.message || 'Failed to send email');
+  }
+
+  return data;
+}
