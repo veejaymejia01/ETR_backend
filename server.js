@@ -531,7 +531,7 @@ async function sendAppointmentEmail({ to, patientName, appointmentDate }) {
   }
 
   const { data, error } = await resend.emails.send({
-    from: 'Healthcare Portal <onboarding@resend.dev>',
+    from: 'Healthcare Portal <noreply@yourdomain.com>',
     to: [to],
     subject: 'Appointment Confirmed',
     html: `
