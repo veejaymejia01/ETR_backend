@@ -7,8 +7,8 @@ const pool = require('./db');
 const app = express();
 const PORT = process.env.PORT || 3000;
 const JWT_SECRET = process.env.JWT_SECRET || "replace-this-in-production";
-const resend = process.env.re_V5mCjU44_3V3cdRqVjqBnErDwc5HntUbZ
-  ? new Resend(process.env.re_V5mCjU44_3V3cdRqVjqBnErDwc5HntUbZ)
+const resend = process.env.re_fKWPgstw_EXVtyVASRCFNyUrwLhTJqsqT
+  ? new Resend(process.env.re_fKWPgstw_EXVtyVASRCFNyUrwLhTJqsqT)
   : null;
 app.use(cors());
 app.use(express.json());
