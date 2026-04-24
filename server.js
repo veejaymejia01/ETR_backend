@@ -461,6 +461,22 @@ app.post('/api/appointments', authRequired, async (req, res) => {
     res.status(500).json({ error: 'Failed to create appointment' });
   }
 });
+app.delete('/api/notifications/:id', authRequired, async (req, res) => {
+  try {
+    const result = await pool.query(
+      'DELETE FROM notifications WHERE id = $1 RETURNING *',
+      [req.params.id]
+    );
+
+    if (!result.rows.length) {
+      return res.status(404).json({ error: 'Notification not found' });
+    }
+
+    res.json({ message: 'Notification deleted successfully' });
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to delete notification' });
+  }
+});
 app.post('/api/patient/appointments', authRequired, async (req, res) => {
   try {
     if (req.user.role !== 'patient') {
