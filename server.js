@@ -461,22 +461,7 @@ app.post('/api/appointments', authRequired, async (req, res) => {
     res.status(500).json({ error: 'Failed to create appointment' });
   }
 });
-app.delete('/api/notifications/:id', authRequired, async (req, res) => {
-  try {
-    const result = await pool.query(
-      'DELETE FROM notifications WHERE id = $1 RETURNING *',
-      [req.params.id]
-    );
 
-    if (!result.rows.length) {
-      return res.status(404).json({ error: 'Notification not found' });
-    }
-
-    res.json({ message: 'Notification deleted successfully' });
-  } catch (error) {
-    res.status(500).json({ error: 'Failed to delete notification' });
-  }
-});
 app.post('/api/patient/appointments', authRequired, async (req, res) => {
   try {
     if (req.user.role !== 'patient') {
@@ -526,6 +511,68 @@ app.post('/api/patient/appointments', authRequired, async (req, res) => {
   } catch (error) {
     console.error(error);
     res.status(500).json({ error: 'Failed to create patient appointment' });
+  }
+});
+app.get('/api/notifications', authRequired, async (req, res) => {
+  try {
+    const result = await pool.query(`
+      SELECT id, patient_name AS "patientName", type, message, status
+      FROM notifications
+      ORDER BY id DESC
+    `);
+
+    res.json(result.rows);
+  } catch (error) {
+    console.error('Fetch notifications error:', error);
+    res.status(500).json({ error: 'Failed to fetch notifications' });
+  }
+});
+
+app.post('/api/notifications/send', authRequired, async (req, res) => {
+  try {
+    const { patientName, message } = req.body || {};
+
+    if (!message) {
+      return res.status(400).json({ error: 'message is required' });
+    }
+
+    const id = `N${Date.now()}`;
+
+    const result = await pool.query(
+      `
+      INSERT INTO notifications (id, patient_name, type, message, status)
+      VALUES ($1, $2, $3, $4, $5)
+      RETURNING id, patient_name AS "patientName", type, message, status
+      `,
+      [id, patientName || 'Unknown Patient', 'Email', message, 'Sent']
+    );
+
+    res.status(201).json(result.rows[0]);
+  } catch (error) {
+    console.error('Create notification error:', error);
+    res.status(500).json({ error: 'Failed to create notification' });
+  }
+});
+
+app.delete('/api/notifications/:id', authRequired, async (req, res) => {
+  try {
+    const result = await pool.query(
+      `
+      DELETE FROM notifications
+      WHERE id = $1
+      RETURNING *
+      `,
+      [req.params.id]
+    );
+
+    if (result.rowCount === 0) {
+      return res.status(404).json({ error: 'Notification not found' });
+    }
+
+    res.json({ message: 'Notification deleted successfully' });
+  } catch (error) {
+    console.error('Delete notification error:', error);
+    res.status(500).json({ error: 'Failed to delete notification' });
   }
 });
 async function start() {
