@@ -194,26 +194,51 @@ app.patch("/api/patients/:id", authRequired, async (req, res) => {
 app.delete("/api/patients/:id", authRequired, async (req, res) => {
   try {
     const patientId = req.params.id;
-    const pr = await pool.query("SELECT * FROM patients WHERE id=$1", [
-      patientId,
-    ]);
-    if (!pr.rows.length)
-      return res.status(404).json({ error: "Patient not found" });
-    const patient = pr.rows[0];
-    await pool.query(
-      "DELETE FROM appointments WHERE patient_id=$1 OR patient_name=$2",
-      [patientId, patient.name],
+
+    const patientResult = await pool.query(
+      "SELECT * FROM patients WHERE id = $1",
+      [patientId]
     );
-    await pool.query("DELETE FROM bills WHERE patient_id=$1", [patientId]);
-    await pool.query("DELETE FROM notifications WHERE patient_name=$1", [
-      patient.name,
-    ]);
-    await pool.query("DELETE FROM patients WHERE id=$1", [patientId]);
-    if (patient.user_id)
-      await pool.query("DELETE FROM users WHERE id=$1", [patient.user_id]);
-    res.json({ message: "Patient and related data deleted successfully" });
-  } catch {
-    res.status(500).json({ error: "Failed to delete patient" });
+
+    if (!patientResult.rows.length) {
+      return res.status(404).json({ error: "Patient not found" });
+    }
+
+    const patient = patientResult.rows[0];
+
+    await pool.query(
+      "DELETE FROM appointments WHERE patient_id = $1 OR patient_name = $2",
+      [patientId, patient.name]
+    );
+
+    await pool.query(
+      "DELETE FROM bills WHERE patient_id = $1",
+      [patientId]
+    );
+
+    await pool.query(
+      "DELETE FROM notifications WHERE patient_name = $1",
+      [patient.name]
+    );
+
+    await pool.query(
+      "DELETE FROM patients WHERE id = $1",
+      [patientId]
+    );
+
+    if (patient.user_id) {
+      await pool.query(
+        "DELETE FROM users WHERE id = $1",
+        [patient.user_id]
+      );
+    }
+
+    res.json({ message: "Patient deleted successfully" });
+  } catch (error) {
+    console.error("Delete patient error:", error);
+    res.status(500).json({
+      error: error.message || "Failed to delete patient"
+    });
   }
 });
 app.get("/api/records/:patientId", authRequired, async (req, res) => {
