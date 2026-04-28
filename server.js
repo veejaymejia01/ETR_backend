@@ -9,7 +9,7 @@ const pool = require("./db");
 const app = express();
 const PORT = process.env.PORT || 3000;
 const JWT_SECRET = process.env.JWT_SECRET || "replace-this-in-production";
-const resend = process.env.RESEND_API_KEY ? new Resend(process.env.RESEND_API_KEY) : null;
+const resend = process.env.re_12g72XJo_5CzFjhYyqFVLPXxBt3ZLFwTd ? new Resend(process.env.re_12g72XJo_5CzFjhYyqFVLPXxBt3ZLFwTd) : null;
 
 app.use(cors());
 app.use(express.json());
