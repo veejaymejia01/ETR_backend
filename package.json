@@ -1,7 +1,7 @@
 {
-  "name": "healthcare-portal-backend",
+  "name": "careflow-backend",
   "version": "1.0.0",
-  "description": "Healthcare Portal Backend with PostgreSQL and patient role support",
+  "description": "CareFlow appointment backend",
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
