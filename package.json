@@ -1,7 +1,6 @@
 {
   "name": "careflow-backend",
   "version": "1.0.0",
-  "description": "CareFlow appointment backend",
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
