@@ -245,6 +245,48 @@ app.post("/api/auth/register-patient", async (req, res) => {
     res.status(500).json({ error: "Registration failed" });
   }
 });
+app.post("/api/auth/forgot-password", async (req, res) => {
+  try {
+    const { email } = req.body || {};
+
+    if (!email) {
+      return res.status(400).json({ error: "email is required" });
+    }
+
+    const userResult = await pool.query(
+      "SELECT * FROM users WHERE email = $1 LIMIT 1",
+      [email]
+    );
+
+    if (!userResult.rows.length) {
+      return res.status(404).json({ error: "Email not found" });
+    }
+
+    const user = userResult.rows[0];
+
+    const message = `
+      Hello ${user.name},
+
+      You requested a password reset for your Healthcare Portal account.
+
+      For this project version, please contact the system administrator to reset your password.
+    `;
+
+    try {
+      await sendEmail(
+        email,
+        "Healthcare Portal Password Reset",
+        message
+      );
+    } catch (emailError) {
+      console.error("Forgot password email error:", emailError.message);
+    }
+
+    res.json({ message: "Password reset instruction sent" });
+  } catch (error) {
+    res.status(500).json({ error: "Failed to process forgot password request" });
+  }
+});
 
 app.get("/api/patients", authRequired, async (_req, res) => {
   try {
