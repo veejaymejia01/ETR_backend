@@ -46,6 +46,7 @@ function validateAppointmentDate(v) {
     return "Appointments are only allowed from 8:00 AM to 6:00 PM";
   return "";
 }
+
 async function sendEmail(to, subject, message) {
   if (!resend || !process.env.RESEND_API_KEY)
     return { sent: false, reason: "RESEND_API_KEY is not set" };
