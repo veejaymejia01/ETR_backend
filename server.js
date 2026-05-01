@@ -6,7 +6,7 @@ const express = require("express"),
   pool = require("./db");
 const app = express(),
   PORT = process.env.PORT || 3000,
-  JWT_SECRET = process.env.JWT_SECRET || "replace-this-in-production",
+  JWT_SECRET = process.env.JWT_SECRET || "replace-this-in-production";
 const resend = process.env.re_N7XXVi9N_BkXXz5RHv3kxaFq3Vepg1LYY
   ? new Resend(process.env.re_N7XXVi9N_BkXXz5RHv3kxaFq3Vepg1LYY)
   : null;
