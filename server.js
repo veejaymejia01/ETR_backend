@@ -7,8 +7,8 @@ const pool = require("./db");
 const app = express();
 const PORT = process.env.PORT || 3000;
 const JWT_SECRET = process.env.JWT_SECRET || "replace-this-in-production";
-const resend = process.env.re_PEZjsU62_2jb7ms2u53jA64hVEDtnQVMa
-  ? new Resend(process.env.re_PEZjsU62_2jb7ms2u53jA64hVEDtnQVMa)
+const resend = process.env.RESEND_API_KEY
+  ? new Resend(process.env.RESEND_API_KEY)
   : null;
 app.use(cors());
 app.use(express.json());
@@ -47,7 +47,7 @@ function validateAppointmentDate(v) {
   return "";
 }
 async function sendEmail(to, subject, message) {
-  if (!resend || !process.env.re_N7XXVi9N_BkXXz5RHv3kxaFq3Vepg1LYY)
+  if (!resend || !process.env.RESEND_API_KEY)
     return { sent: false, reason: "RESEND_API_KEY is not set" };
   if (!to) return { sent: false, reason: "Recipient email missing" };
   try {
