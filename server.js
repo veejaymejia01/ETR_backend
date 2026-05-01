@@ -7,9 +7,10 @@ const pool = require("./db");
 const app = express();
 const PORT = process.env.PORT || 3000;
 const JWT_SECRET = process.env.JWT_SECRET || "replace-this-in-production";
-const resend = process.env.RESEND_API_KEY
-  ? new Resend(process.env.RESEND_API_KEY)
-  : null;
+const resend = new Resend("re_PEZjsU62_2jb7ms2u53jA64hVEDtnQVMa");
+// const resend = process.env.RESEND_API_KEY
+//   ? new Resend(process.env.RESEND_API_KEY)
+//   : null;
 app.use(cors());
 app.use(express.json());
 function genId(p) {
@@ -46,20 +47,57 @@ function validateAppointmentDate(v) {
     return "Appointments are only allowed from 8:00 AM to 6:00 PM";
   return "";
 }
+// async function sendEmail(to, subject, message) {
+//   if (!resend || !process.env.RESEND_API_KEY)
+//     return { sent: false, reason: "RESEND_API_KEY is not set" };
+//   if (!to) return { sent: false, reason: "Recipient email missing" };
+//   try {
+//     const from = process.env.RESEND_FROM || "CareFlow <onboarding@resend.dev>";
+//     const { error } = await resend.emails.send({
+//       from,
+//       to: [to],
+//       subject,
+//       html: `<div style="font-family:Arial,sans-serif;line-height:1.5"><h2>${subject}</h2><p>${message}</p></div>`,
+//     });
+//     if (error)
+//       return { sent: false, reason: error.message || "Email provider error" };
+//     return { sent: true };
+//   } catch (e) {
+//     return { sent: false, reason: e.message };
+//   }
+// }
+
 async function sendEmail(to, subject, message) {
-  if (!resend || !process.env.RESEND_API_KEY)
-    return { sent: false, reason: "RESEND_API_KEY is not set" };
-  if (!to) return { sent: false, reason: "Recipient email missing" };
+  if (!re_PEZjsU62_2jb7ms2u53jA64hVEDtnQVMa) {
+    return { sent: false, reason: "RESEND_API_KEY is missing" };
+  }
+
+  if (!to) {
+    return { sent: false, reason: "Recipient email missing" };
+  }
+
   try {
-    const from = process.env.RESEND_FROM || "CareFlow <onboarding@resend.dev>";
+    const from = "CareFlow <onboarding@resend.dev>";
+
     const { error } = await resend.emails.send({
       from,
       to: [to],
       subject,
-      html: `<div style="font-family:Arial,sans-serif;line-height:1.5"><h2>${subject}</h2><p>${message}</p></div>`,
+      html: `
+        <div style="font-family:Arial,sans-serif;line-height:1.5">
+          <h2>${subject}</h2>
+          <p>${message}</p>
+        </div>
+      `,
     });
-    if (error)
-      return { sent: false, reason: error.message || "Email provider error" };
+
+    if (error) {
+      return {
+        sent: false,
+        reason: error.message || "Email provider error",
+      };
+    }
+
     return { sent: true };
   } catch (e) {
     return { sent: false, reason: e.message };
