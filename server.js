@@ -1,15 +1,15 @@
 require("dotenv").config();
-const express = require("express"),
-  cors = require("cors"),
-  jwt = require("jsonwebtoken"),
-  { Resend } = require("resend"),
-  pool = require("./db");
-const app = express(),
-  PORT = process.env.PORT || 3000,
-  JWT_SECRET = process.env.JWT_SECRET || "replace-this-in-production",
-  resend = process.re_N7XXVi9N_BkXXz5RHv3kxaFq3Vepg1LYY
-    ? new Resend(process.env.re_N7XXVi9N_BkXXz5RHv3kxaFq3Vepg1LYY)
-    : null;
+const express = require("express");
+const cors = require("cors");
+const jwt = require("jsonwebtoken");
+const { Resend } = require("resend");
+const pool = require("./db");
+const app = express();
+const PORT = process.env.PORT || 3000;
+const JWT_SECRET = process.env.JWT_SECRET || "replace-this-in-production";
+const resend = process.env.re_N7XXVi9N_BkXXz5RHv3kxaFq3Vepg1LYY
+  ? new Resend(process.env.re_N7XXVi9N_BkXXz5RHv3kxaFq3Vepg1LYY)
+  : null;
 app.use(cors());
 app.use(express.json());
 function genId(p) {
