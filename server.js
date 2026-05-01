@@ -7,8 +7,8 @@ const express = require("express"),
 const app = express(),
   PORT = process.env.PORT || 3000,
   JWT_SECRET = process.env.JWT_SECRET || "replace-this-in-production",
-  const resend = process.env.RESEND_API_KEY
-  ? new Resend(process.env.RESEND_API_KEY)
+  const resend = process.env.re_N7XXVi9N_BkXXz5RHv3kxaFq3Vepg1LYY
+  ? new Resend(process.env.re_N7XXVi9N_BkXXz5RHv3kxaFq3Vepg1LYY)
   : null;
 app.use(cors());
 app.use(express.json());
