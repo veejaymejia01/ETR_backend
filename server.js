@@ -47,7 +47,7 @@ function validateAppointmentDate(v) {
   return "";
 }
 async function sendEmail(to, subject, message) {
-  if (!resend || !process.env.RESEND_API_KEY)
+  if (!resend || !process.env.re_N7XXVi9N_BkXXz5RHv3kxaFq3Vepg1LYY)
     return { sent: false, reason: "RESEND_API_KEY is not set" };
   if (!to) return { sent: false, reason: "Recipient email missing" };
   try {
