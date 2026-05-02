@@ -12,7 +12,7 @@ const JWT_SECRET = process.env.JWT_SECRET || "replace-this-in-production";
 app.use(cors());
 app.use(express.json());
 
-// ==================== BREVO SMTP (Optimized) ====================
+// ==================== BREVO SMTP - OPTIMIZED ====================
 const transporter = nodemailer.createTransport({
   host: "smtp-relay.brevo.com",
   port: 587,
@@ -21,17 +21,19 @@ const transporter = nodemailer.createTransport({
     user: process.env.BREVO_SMTP_USER,
     pass: process.env.BREVO_SMTP_PASS,
   },
-  connectionTimeout: 30000,
-  greetingTimeout: 30000,
-  socketTimeout: 30000,
+  connectionTimeout: 60000,   // 60 seconds
+  greetingTimeout: 60000,
+  socketTimeout: 60000,
   pool: true,
   maxConnections: 5,
   tls: { rejectUnauthorized: false }
 });
 
 async function sendEmail(to, subject, message) {
+  console.log(`📧 [Brevo] Attempting to send to: ${to} | Subject: ${subject}`);
+
   if (!process.env.BREVO_SMTP_USER || !process.env.BREVO_SMTP_PASS) {
-    console.log("📧 Email skipped: Brevo SMTP not configured");
+    console.log("❌ Brevo SMTP credentials missing in .env");
     return { sent: false, reason: "Brevo SMTP credentials missing" };
   }
   if (!to) return { sent: false, reason: "Recipient email missing" };
@@ -43,7 +45,8 @@ async function sendEmail(to, subject, message) {
       subject: subject || "CareFlow Notification",
       html: `<div style="font-family:Arial,sans-serif;line-height:1.5"><h2>${subject}</h2><p>${message}</p></div>`,
     });
-    console.log("✅ Email sent via Brevo! ID:", info.messageId);
+
+    console.log("✅ Email sent successfully via Brevo! ID:", info.messageId);
     return { sent: true };
   } catch (e) {
     console.error("❌ Brevo Error:", e.message);
