@@ -12,7 +12,7 @@ const JWT_SECRET = process.env.JWT_SECRET || "replace-this-in-production";
 app.use(cors());
 app.use(express.json());
 
-// ==================== BREVO SMTP (Improved) ====================
+// ==================== BREVO SMTP EMAIL ====================
 const transporter = nodemailer.createTransport({
   host: "smtp-relay.brevo.com",
   port: 587,
@@ -21,12 +21,9 @@ const transporter = nodemailer.createTransport({
     user: process.env.BREVO_SMTP_USER,
     pass: process.env.BREVO_SMTP_PASS,
   },
-  connectionTimeout: 15000,   // 15 seconds
-  greetingTimeout: 15000,
-  socketTimeout: 15000,
-  tls: {
-    rejectUnauthorized: false   // helps with Render connection issues
-  }
+  connectionTimeout: 10000,   // 10 seconds
+  greetingTimeout: 10000,
+  socketTimeout: 10000,
 });
 
 async function sendEmail(to, subject, message) {
@@ -106,7 +103,15 @@ async function initDb() {
 // ==================== ROUTES ====================
 app.get("/", (_, res) => res.json({ service: "CareFlow Backend", status: "ok" }));
 
-// Login
+app.get("/test-db", async (_, res) => {
+  try {
+    const r = await pool.query("SELECT NOW()");
+    res.json({ status: "database connected", time: r.rows[0].now });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
 app.post("/api/auth/login", async (req, res) => {
   try {
     const { email, password } = req.body || {};
@@ -119,7 +124,6 @@ app.post("/api/auth/login", async (req, res) => {
   }
 });
 
-// Register Patient
 app.post("/api/auth/register-patient", async (req, res) => {
   try {
     const { name, email, password, phone } = req.body || {};
@@ -135,7 +139,6 @@ app.post("/api/auth/register-patient", async (req, res) => {
   }
 });
 
-// Forgot Password
 app.post("/api/auth/forgot-password", async (req, res) => {
   try {
     const { email } = req.body || {};
@@ -149,8 +152,141 @@ app.post("/api/auth/forgot-password", async (req, res) => {
   }
 });
 
-// ... (All other routes - patients, appointments, email/send, patient routes) are included below for brevity. 
-// You can copy the rest of your original routes from your old file if needed. For now, the most important ones are here.
+app.get("/api/patients", authRequired, async (_, res) => {
+  try {
+    const r = await pool.query("SELECT * FROM patients ORDER BY name");
+    res.json(r.rows);
+  } catch {
+    res.status(500).json({ error: "Failed to fetch patients" });
+  }
+});
+
+app.post("/api/patients", authRequired, async (req, res) => {
+  try {
+    const { name, email, phone, condition, diagnosis } = req.body || {};
+    if (!name) return res.status(400).json({ error: "name is required" });
+    const id = genId("P");
+    const r = await pool.query("INSERT INTO patients(id,name,email,phone,condition,diagnosis) VALUES($1,$2,$3,$4,$5,$6) RETURNING *", [id, name, email || null, phone || "N/A", condition || "General", diagnosis || "Pending assessment"]);
+    res.status(201).json(r.rows[0]);
+  } catch {
+    res.status(500).json({ error: "Failed to create patient" });
+  }
+});
+
+app.delete("/api/patients/:id", authRequired, async (req, res) => {
+  try {
+    const id = req.params.id;
+    const pr = await pool.query("SELECT * FROM patients WHERE id=$1", [id]);
+    if (!pr.rows.length) return res.status(404).json({ error: "Patient not found" });
+    const p = pr.rows[0];
+    await pool.query("DELETE FROM appointments WHERE patient_id=$1 OR patient_name=$2", [id, p.name]);
+    await pool.query("DELETE FROM bills WHERE patient_id=$1", [id]);
+    await pool.query("DELETE FROM notifications WHERE patient_name=$1", [p.name]);
+    await pool.query("DELETE FROM patients WHERE id=$1", [id]);
+    if (p.user_id) await pool.query("DELETE FROM users WHERE id=$1", [p.user_id]);
+    res.json({ message: "Patient deleted successfully" });
+  } catch (e) {
+    res.status(500).json({ error: e.message || "Failed to delete patient" });
+  }
+});
+
+app.get("/api/appointments", authRequired, async (_, res) => {
+  try {
+    const r = await pool.query(`SELECT id,patient_id AS "patientId",patient_name AS "patientName",appointment_date AS "appointmentDate",status FROM appointments ORDER BY appointment_date`);
+    res.json(r.rows);
+  } catch {
+    res.status(500).json({ error: "Failed to fetch appointments" });
+  }
+});
+
+app.post("/api/appointments", authRequired, async (req, res) => {
+  try {
+    const { patientId, patientName, appointmentDate, status } = req.body || {};
+    const err = validateAppointmentDate(appointmentDate);
+    if (err) return res.status(400).json({ error: err });
+    if (!patientName && !patientId) return res.status(400).json({ error: "patientName or patientId is required" });
+    let patient = null;
+    if (patientId) {
+      const r = await pool.query("SELECT * FROM patients WHERE id=$1 LIMIT 1", [patientId]);
+      patient = r.rows[0] || null;
+    }
+    if (!patient && patientName) {
+      const r = await pool.query("SELECT * FROM patients WHERE LOWER(name)=LOWER($1) LIMIT 1", [patientName]);
+      patient = r.rows[0] || null;
+    }
+    const id = genId("A"), finalName = patient ? patient.name : patientName;
+    const r = await pool.query(`INSERT INTO appointments(id,patient_id,patient_name,appointment_date,status) VALUES($1,$2,$3,$4,$5) RETURNING id,patient_id AS "patientId",patient_name AS "patientName",appointment_date AS "appointmentDate",status`, [id, patient ? patient.id : null, finalName, appointmentDate, status || "Scheduled"]);
+    let er = { sent: false };
+    if (patient && patient.email) er = await sendEmail(patient.email, "Appointment Confirmed", `Hello ${patient.name}, your appointment is scheduled for ${appointmentDate}.`);
+    res.status(201).json({ ...r.rows[0], emailSent: er.sent, emailReason: er.reason || null });
+  } catch {
+    res.status(500).json({ error: "Failed to create appointment" });
+  }
+});
+
+app.patch("/api/appointments/:id/status", authRequired, async (req, res) => {
+  try {
+    const r = await pool.query(`UPDATE appointments SET status=$1 WHERE id=$2 RETURNING id,patient_id AS "patientId",patient_name AS "patientName",appointment_date AS "appointmentDate",status`, [req.body?.status || "Scheduled", req.params.id]);
+    if (!r.rows.length) return res.status(404).json({ error: "Appointment not found" });
+    res.json(r.rows[0]);
+  } catch {
+    res.status(500).json({ error: "Failed to update appointment status" });
+  }
+});
+
+app.post("/api/email/send", authRequired, async (req, res) => {
+  try {
+    const { patientId, subject, message } = req.body || {};
+    if (!patientId || !message) return res.status(400).json({ error: "patientId and message are required" });
+    const p = await pool.query("SELECT email,name FROM patients WHERE id=$1 LIMIT 1", [patientId]);
+    if (!p.rows.length || !p.rows[0].email) return res.status(404).json({ error: "Patient email not found" });
+    const er = await sendEmail(p.rows[0].email, subject || "CareFlow Notification", message);
+    res.status(201).json({ message: er.sent ? "Email sent successfully" : "Email was not sent", emailSent: er.sent, emailReason: er.reason || null });
+  } catch {
+    res.status(500).json({ error: "Failed to send email" });
+  }
+});
+
+app.get("/api/patient/profile", authRequired, async (req, res) => {
+  try {
+    if (req.user.role !== "patient") return res.status(403).json({ error: "Forbidden" });
+    const r = await pool.query("SELECT * FROM patients WHERE user_id=$1 LIMIT 1", [req.user.sub]);
+    if (!r.rows.length) return res.status(404).json({ error: "Patient profile not found" });
+    res.json(r.rows[0]);
+  } catch {
+    res.status(500).json({ error: "Failed to fetch patient profile" });
+  }
+});
+
+app.get("/api/patient/appointments", authRequired, async (req, res) => {
+  try {
+    if (req.user.role !== "patient") return res.status(403).json({ error: "Forbidden" });
+    const p = await pool.query("SELECT * FROM patients WHERE user_id=$1 LIMIT 1", [req.user.sub]);
+    if (!p.rows.length) return res.status(404).json({ error: "Patient profile not found" });
+    const r = await pool.query(`SELECT id,patient_id AS "patientId",patient_name AS "patientName",appointment_date AS "appointmentDate",status FROM appointments WHERE patient_id=$1 ORDER BY appointment_date`, [p.rows[0].id]);
+    res.json(r.rows);
+  } catch {
+    res.status(500).json({ error: "Failed to fetch patient appointments" });
+  }
+});
+
+app.post("/api/patient/appointments", authRequired, async (req, res) => {
+  try {
+    if (req.user.role !== "patient") return res.status(403).json({ error: "Forbidden" });
+    const { appointmentDate } = req.body || {};
+    const err = validateAppointmentDate(appointmentDate);
+    if (err) return res.status(400).json({ error: err });
+    const p = await pool.query("SELECT * FROM patients WHERE user_id=$1 LIMIT 1", [req.user.sub]);
+    if (!p.rows.length) return res.status(404).json({ error: "Patient profile not found" });
+    const patient = p.rows[0], id = genId("A");
+    const r = await pool.query(`INSERT INTO appointments(id,patient_id,patient_name,appointment_date,status) VALUES($1,$2,$3,$4,$5) RETURNING id,patient_id AS "patientId",patient_name AS "patientName",appointment_date AS "appointmentDate",status`, [id, patient.id, patient.name, appointmentDate, "Scheduled"]);
+    let er = { sent: false };
+    if (patient.email) er = await sendEmail(patient.email, "Appointment Confirmed", `Hello ${patient.name}, your appointment is scheduled for ${appointmentDate}.`);
+    res.status(201).json({ ...r.rows[0], emailSent: er.sent, emailReason: er.reason || null });
+  } catch {
+    res.status(500).json({ error: "Failed to create patient appointment" });
+  }
+});
 
 async function start() {
   try {
