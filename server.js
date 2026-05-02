@@ -12,7 +12,7 @@ const JWT_SECRET = process.env.JWT_SECRET || "replace-this-in-production";
 app.use(cors());
 app.use(express.json());
 
-// ==================== BREVO SMTP EMAIL ====================
+// ==================== BREVO SMTP (Optimized) ====================
 const transporter = nodemailer.createTransport({
   host: "smtp-relay.brevo.com",
   port: 587,
@@ -24,6 +24,8 @@ const transporter = nodemailer.createTransport({
   connectionTimeout: 30000,
   greetingTimeout: 30000,
   socketTimeout: 30000,
+  pool: true,
+  maxConnections: 5,
   tls: { rejectUnauthorized: false }
 });
 
