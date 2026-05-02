@@ -13,7 +13,7 @@ app.use(cors());
 app.use(express.json());
 
 // ==================== BREVO SMTP TRANSPORTER ====================
-const transporter = nodemailer.createTransporter({
+const transporter = nodemailer.createTransport({     // ← Correct (capital T)
   host: "smtp-relay.brevo.com",
   port: 587,
   secure: false,
