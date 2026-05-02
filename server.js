@@ -37,10 +37,10 @@ async function sendEmail(to, subject, message) {
       subject: subject || "CareFlow Notification",
       html: `<div style="font-family:Arial,sans-serif;line-height:1.5"><h2>${subject}</h2><p>${message}</p></div>`,
     });
-    console.log("✅ Email sent via Brevo!");
+    console.log("✅ Email sent successfully via Brevo!");
     return { sent: true };
   } catch (e) {
-    console.error("❌ Brevo Error:", e.message);
+    console.error("❌ Brevo SMTP Error:", e.message);
     return { sent: false, reason: e.message };
   }
 }
@@ -51,7 +51,11 @@ function genId(p) {
 }
 
 function signUser(u) {
-  return jwt.sign({ sub: u.id, email: u.email, role: u.role, name: u.name }, JWT_SECRET, { expiresIn: "8h" });
+  return jwt.sign(
+    { sub: u.id, email: u.email, role: u.role, name: u.name },
+    JWT_SECRET,
+    { expiresIn: "8h" }
+  );
 }
 
 function authRequired(req, res, next) {
@@ -76,28 +80,29 @@ function validateAppointmentDate(v) {
   return "";
 }
 
-// ==================== INIT DB ====================
+// ==================== DATABASE INIT ====================
 async function initDb() {
   await pool.query(`CREATE TABLE IF NOT EXISTS users(id TEXT PRIMARY KEY,email TEXT UNIQUE NOT NULL,password TEXT NOT NULL,role TEXT NOT NULL,name TEXT NOT NULL)`);
   await pool.query(`CREATE TABLE IF NOT EXISTS patients(id TEXT PRIMARY KEY,user_id TEXT UNIQUE,name TEXT NOT NULL,email TEXT,phone TEXT,condition TEXT,diagnosis TEXT)`);
-  for (const c of ["user_id TEXT","email TEXT","phone TEXT","condition TEXT","diagnosis TEXT"])
+  for (const c of ["user_id TEXT", "email TEXT", "phone TEXT", "condition TEXT", "diagnosis TEXT"])
     await pool.query(`ALTER TABLE patients ADD COLUMN IF NOT EXISTS ${c}`);
   await pool.query(`CREATE TABLE IF NOT EXISTS appointments(id TEXT PRIMARY KEY,patient_id TEXT,patient_name TEXT NOT NULL,appointment_date TEXT NOT NULL,status TEXT DEFAULT 'Scheduled')`);
   await pool.query(`ALTER TABLE appointments ADD COLUMN IF NOT EXISTS patient_id TEXT`);
   await pool.query(`CREATE TABLE IF NOT EXISTS bills(id TEXT PRIMARY KEY,patient_id TEXT NOT NULL,patient_name TEXT NOT NULL,invoice TEXT NOT NULL,amount NUMERIC NOT NULL)`);
   await pool.query(`CREATE TABLE IF NOT EXISTS notifications(id TEXT PRIMARY KEY,patient_name TEXT NOT NULL,type TEXT NOT NULL,message TEXT NOT NULL,status TEXT NOT NULL)`);
 
-  // Demo accounts
-  const a = await pool.query("SELECT id FROM users WHERE email=$1 LIMIT 1", ["admin@hospital.com"]);
-  if (!a.rows.length)
+  // Demo admin and doctor accounts
+  const adminCheck = await pool.query("SELECT id FROM users WHERE email=$1 LIMIT 1", ["admin@hospital.com"]);
+  if (!adminCheck.rows.length) {
     await pool.query("INSERT INTO users(id,email,password,role,name) VALUES($1,$2,$3,$4,$5)", ["U1001", "admin@hospital.com", "admin123", "admin", "System Admin"]);
-
-  const d = await pool.query("SELECT id FROM users WHERE email=$1 LIMIT 1", ["doctor@hospital.com"]);
-  if (!d.rows.length)
+  }
+  const doctorCheck = await pool.query("SELECT id FROM users WHERE email=$1 LIMIT 1", ["doctor@hospital.com"]);
+  if (!doctorCheck.rows.length) {
     await pool.query("INSERT INTO users(id,email,password,role,name) VALUES($1,$2,$3,$4,$5)", ["U1002", "doctor@hospital.com", "doctor123", "doctor", "Doctor User"]);
+  }
 }
 
-// ==================== BASIC ROUTES ====================
+// ==================== ROUTES ====================
 app.get("/", (_, res) => res.json({ service: "CareFlow Backend", status: "ok" }));
 
 app.post("/api/auth/login", async (req, res) => {
@@ -112,8 +117,8 @@ app.post("/api/auth/login", async (req, res) => {
   }
 });
 
-// Add the rest of your routes here (I kept it minimal for now)
-// You can paste your other routes below this if needed.
+// Add the rest of your routes here (patients, appointments, email/send, etc.)
+// For now, the login route is the most important.
 
 async function start() {
   try {
