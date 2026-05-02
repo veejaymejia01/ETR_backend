@@ -59,8 +59,8 @@ function signUser(u) {
 }
 
 function authRequired(req, res, next) {
-  const h = req.headers.authorization || "",
-    t = h.startsWith("Bearer ") ? h.slice(7) : "";
+  const h = req.headers.authorization || "";
+  const t = h.startsWith("Bearer ") ? h.slice(7) : "";
   if (!t) return res.status(401).json({ error: "Missing token" });
   try {
     req.user = jwt.verify(t, JWT_SECRET);
@@ -329,18 +329,20 @@ app.post("/api/appointments", authRequired, async (req, res) => {
         status || "Scheduled",
       ],
     );
-    let er = { sent: false, reason: "No patient email found" };
+    let er = { sent: false };
     if (patient && patient.email)
       er = await sendEmail(
         patient.email,
         "Appointment Confirmed",
         `Hello ${patient.name}, your appointment is scheduled for ${appointmentDate}.`,
       );
-    res.status(201).json({
-      ...r.rows[0],
-      emailSent: er.sent,
-      emailReason: er.reason || null,
-    });
+    res
+      .status(201)
+      .json({
+        ...r.rows[0],
+        emailSent: er.sent,
+        emailReason: er.reason || null,
+      });
   } catch {
     res.status(500).json({ error: "Failed to create appointment" });
   }
@@ -378,11 +380,13 @@ app.post("/api/email/send", authRequired, async (req, res) => {
       subject || "CareFlow Notification",
       message,
     );
-    res.status(201).json({
-      message: er.sent ? "Email sent successfully" : "Email was not sent",
-      emailSent: er.sent,
-      emailReason: er.reason || null,
-    });
+    res
+      .status(201)
+      .json({
+        message: er.sent ? "Email sent successfully" : "Email was not sent",
+        emailSent: er.sent,
+        emailReason: er.reason || null,
+      });
   } catch {
     res.status(500).json({ error: "Failed to send email" });
   }
@@ -443,18 +447,20 @@ app.post("/api/patient/appointments", authRequired, async (req, res) => {
       `INSERT INTO appointments(id,patient_id,patient_name,appointment_date,status) VALUES($1,$2,$3,$4,$5) RETURNING id,patient_id AS "patientId",patient_name AS "patientName",appointment_date AS "appointmentDate",status`,
       [id, patient.id, patient.name, appointmentDate, "Scheduled"],
     );
-    let er = { sent: false, reason: "Patient email missing" };
+    let er = { sent: false };
     if (patient.email)
       er = await sendEmail(
         patient.email,
         "Appointment Confirmed",
         `Hello ${patient.name}, your appointment is scheduled for ${appointmentDate}.`,
       );
-    res.status(201).json({
-      ...r.rows[0],
-      emailSent: er.sent,
-      emailReason: er.reason || null,
-    });
+    res
+      .status(201)
+      .json({
+        ...r.rows[0],
+        emailSent: er.sent,
+        emailReason: er.reason || null,
+      });
   } catch {
     res.status(500).json({ error: "Failed to create patient appointment" });
   }
