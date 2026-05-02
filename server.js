@@ -2,7 +2,6 @@ require("dotenv").config();
 const express = require("express");
 const cors = require("cors");
 const jwt = require("jsonwebtoken");
-const nodemailer = require("nodemailer");
 const pool = require("./db");
 
 const app = express();
@@ -12,51 +11,44 @@ const JWT_SECRET = process.env.JWT_SECRET || "replace-this-in-production";
 app.use(cors());
 app.use(express.json());
 
-// ==================== BREVO SMTP - FINAL OPTIMIZED VERSION ====================
-const transporter = nodemailer.createTransport({
-  host: "smtp-relay.brevo.com",
-  port: 587,
-  secure: false,
-  auth: {
-    user: process.env.BREVO_SMTP_USER,
-    pass: process.env.BREVO_SMTP_PASS,
-  },
-  connectionTimeout: 60000,     // 60 seconds
-  greetingTimeout: 60000,
-  socketTimeout: 60000,
-  pool: true,
-  maxConnections: 5,
-  tls: { rejectUnauthorized: false }
-});
-
+// ==================== BREVO API (More reliable than SMTP on Render) ====================
 async function sendEmail(to, subject, message) {
-  console.log(`📧 [Brevo] Attempting to send to: ${to} | Subject: ${subject}`);
-
-  if (!process.env.BREVO_SMTP_USER || !process.env.BREVO_SMTP_PASS) {
-    console.log("❌ Brevo SMTP credentials are missing");
-    return { sent: false, reason: "Brevo SMTP credentials missing" };
+  if (!process.env.BREVO_API_KEY) {
+    console.log("📧 Email skipped: BREVO_API_KEY not configured");
+    return { sent: false, reason: "BREVO_API_KEY missing" };
   }
   if (!to) return { sent: false, reason: "Recipient email missing" };
 
-  // Retry up to 2 times
-  for (let attempt = 1; attempt <= 2; attempt++) {
-    try {
-      const info = await transporter.sendMail({
-        from: `"CareFlow" <${process.env.BREVO_FROM_EMAIL || "no-reply@careflow.example.com"}>`,
-        to: to,
+  try {
+    const response = await fetch("https://api.brevo.com/v3/smtp/email", {
+      method: "POST",
+      headers: {
+        "api-key": process.env.BREVO_API_KEY,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        sender: { 
+          name: "CareFlow", 
+          email: process.env.BREVO_FROM_EMAIL || "no-reply@careflow.example.com" 
+        },
+        to: [{ email: to }],
         subject: subject || "CareFlow Notification",
-        html: `<div style="font-family:Arial,sans-serif;line-height:1.5"><h2>${subject}</h2><p>${message}</p></div>`,
-      });
-      console.log("✅ Email sent successfully via Brevo! ID:", info.messageId);
+        htmlContent: `<div style="font-family:Arial,sans-serif;line-height:1.5"><h2>${subject}</h2><p>${message}</p></div>`,
+      }),
+    });
+
+    const data = await response.json();
+
+    if (response.ok) {
+      console.log("✅ Email sent successfully via Brevo API!");
       return { sent: true };
-    } catch (e) {
-      console.error(`❌ Brevo Error (attempt ${attempt}/2):`, e.message);
-      if (attempt === 2) {
-        return { sent: false, reason: e.message };
-      }
-      // Wait 3 seconds before retry
-      await new Promise(resolve => setTimeout(resolve, 3000));
+    } else {
+      console.error("❌ Brevo API Error:", data);
+      return { sent: false, reason: data.message || "API error" };
     }
+  } catch (e) {
+    console.error("❌ Brevo API Exception:", e.message);
+    return { sent: false, reason: e.message };
   }
 }
 
@@ -158,7 +150,7 @@ app.post("/api/auth/forgot-password", async (req, res) => {
   }
 });
 
-// Patients
+// Patients, Appointments, Email Send, Patient routes (same as before)
 app.get("/api/patients", authRequired, async (_, res) => {
   try {
     const r = await pool.query("SELECT * FROM patients ORDER BY name");
@@ -197,7 +189,6 @@ app.delete("/api/patients/:id", authRequired, async (req, res) => {
   }
 });
 
-// Appointments
 app.get("/api/appointments", authRequired, async (_, res) => {
   try {
     const r = await pool.query(`SELECT id,patient_id AS "patientId",patient_name AS "patientName",appointment_date AS "appointmentDate",status FROM appointments ORDER BY appointment_date`);
@@ -242,7 +233,6 @@ app.patch("/api/appointments/:id/status", authRequired, async (req, res) => {
   }
 });
 
-// Email Send
 app.post("/api/email/send", authRequired, async (req, res) => {
   try {
     const { patientId, subject, message } = req.body || {};
@@ -256,7 +246,6 @@ app.post("/api/email/send", authRequired, async (req, res) => {
   }
 });
 
-// Patient routes
 app.get("/api/patient/profile", authRequired, async (req, res) => {
   try {
     if (req.user.role !== "patient") return res.status(403).json({ error: "Forbidden" });
