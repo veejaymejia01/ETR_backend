@@ -242,9 +242,20 @@ app.post("/api/email/send", authRequired, async (req, res) => {
 app.get("/api/email/history", authRequired, async (req, res) => {
   try {
     const r = await pool.query(`
-      SELECT patient_name AS patient, appointment_date AS date, 'Appointment Reminder' AS subject, status 
+      SELECT 
+        patient_name AS patient, 
+        appointment_date AS date, 
+        'Appointment Confirmation' AS subject, 
+        status 
       FROM appointments 
-      ORDER BY appointment_date DESC LIMIT 20
+      UNION ALL
+      SELECT 
+        'System' AS patient, 
+        created_at AS date, 
+        type AS subject, 
+        status 
+      FROM notifications 
+      ORDER BY date DESC LIMIT 50
     `);
     res.json(r.rows);
   } catch (e) {
