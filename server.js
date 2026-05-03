@@ -11,10 +11,10 @@ const JWT_SECRET = process.env.JWT_SECRET || "replace-this-in-production";
 app.use(cors());
 app.use(express.json());
 
-// ==================== BREVO API (More reliable than SMTP on Render) ====================
+// ==================== BREVO API (Recommended) ====================
 async function sendEmail(to, subject, message) {
   if (!process.env.BREVO_API_KEY) {
-    console.log("📧 Email skipped: BREVO_API_KEY not configured");
+    console.log("📧 Email skipped: BREVO_API_KEY missing");
     return { sent: false, reason: "BREVO_API_KEY missing" };
   }
   if (!to) return { sent: false, reason: "Recipient email missing" };
@@ -27,10 +27,7 @@ async function sendEmail(to, subject, message) {
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        sender: { 
-          name: "CareFlow", 
-          email: process.env.BREVO_FROM_EMAIL || "no-reply@careflow.example.com" 
-        },
+        sender: { name: "CareFlow", email: process.env.BREVO_FROM_EMAIL || "no-reply@careflow.example.com" },
         to: [{ email: to }],
         subject: subject || "CareFlow Notification",
         htmlContent: `<div style="font-family:Arial,sans-serif;line-height:1.5"><h2>${subject}</h2><p>${message}</p></div>`,
@@ -38,9 +35,8 @@ async function sendEmail(to, subject, message) {
     });
 
     const data = await response.json();
-
     if (response.ok) {
-      console.log("✅ Email sent successfully via Brevo API!");
+      console.log("✅ Email sent via Brevo API!");
       return { sent: true };
     } else {
       console.error("❌ Brevo API Error:", data);
@@ -107,7 +103,6 @@ async function initDb() {
 // ==================== ROUTES ====================
 app.get("/", (_, res) => res.json({ service: "CareFlow Backend", status: "ok" }));
 
-// Login
 app.post("/api/auth/login", async (req, res) => {
   try {
     const { email, password } = req.body || {};
@@ -120,7 +115,6 @@ app.post("/api/auth/login", async (req, res) => {
   }
 });
 
-// Register Patient
 app.post("/api/auth/register-patient", async (req, res) => {
   try {
     const { name, email, password, phone } = req.body || {};
@@ -136,7 +130,6 @@ app.post("/api/auth/register-patient", async (req, res) => {
   }
 });
 
-// Forgot Password
 app.post("/api/auth/forgot-password", async (req, res) => {
   try {
     const { email } = req.body || {};
@@ -150,7 +143,6 @@ app.post("/api/auth/forgot-password", async (req, res) => {
   }
 });
 
-// Patients, Appointments, Email Send, Patient routes (same as before)
 app.get("/api/patients", authRequired, async (_, res) => {
   try {
     const r = await pool.query("SELECT * FROM patients ORDER BY name");
@@ -243,6 +235,20 @@ app.post("/api/email/send", authRequired, async (req, res) => {
     res.status(201).json({ message: er.sent ? "Email sent successfully" : "Email was not sent", emailSent: er.sent, emailReason: er.reason || null });
   } catch {
     res.status(500).json({ error: "Failed to send email" });
+  }
+});
+
+// New: Email History
+app.get("/api/email/history", authRequired, async (req, res) => {
+  try {
+    const r = await pool.query(`
+      SELECT patient_name AS patient, appointment_date AS date, 'Appointment Reminder' AS subject, status 
+      FROM appointments 
+      ORDER BY appointment_date DESC LIMIT 20
+    `);
+    res.json(r.rows);
+  } catch (e) {
+    res.status(500).json({ error: "Failed to load email history" });
   }
 });
 
