@@ -239,6 +239,7 @@ app.post("/api/email/send", authRequired, async (req, res) => {
 });
 
 // New: Email History
+// ==================== EMAIL HISTORY (FIXED) ====================
 app.get("/api/email/history", authRequired, async (req, res) => {
   try {
     const r = await pool.query(`
@@ -250,15 +251,17 @@ app.get("/api/email/history", authRequired, async (req, res) => {
       FROM appointments 
       UNION ALL
       SELECT 
-        'System' AS patient, 
-        created_at AS date, 
+        patient_name AS patient, 
+        id AS date,                    -- ← FIXED: use id instead of created_at
         type AS subject, 
         status 
       FROM notifications 
-      ORDER BY date DESC LIMIT 50
+      ORDER BY date DESC 
+      LIMIT 50
     `);
     res.json(r.rows);
   } catch (e) {
+    console.error("Email history error:", e);
     res.status(500).json({ error: "Failed to load email history" });
   }
 });
